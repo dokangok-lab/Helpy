@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Erledigt! – To-do App</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --card: #fffdf8; --ink: #1f1d1a; --muted: #7a746a;
+    --line: #e4ded2; --accent: #e2542f; --accent-ink: #fff;
+    --hoch: #e2542f; --mittel: #e0a526; --niedrig: #4c9a6a;
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 4px 16px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161513; --card: #211f1c; --ink: #f1ece3; --muted: #9b948a;
+      --line: #34312c; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    min-height: 100vh; padding: 24px 16px 64px;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  header { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 2.2rem; margin: 0; letter-spacing: -.03em; line-height: 1; }
+  h1 span { color: var(--accent); }
+  .datum { color: var(--muted); font-size: .9rem; margin-top: 6px; }
+
+  .version {
+    font: 600 .75rem/1 ui-monospace, Menlo, monospace; vertical-align: middle; letter-spacing: 0;
+    background: var(--card); color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 5px 9px; cursor: pointer;
+  }
+  .version:hover { color: var(--ink); }
+  .verlauf { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .verlauf-kopf { display: flex; justify-content: space-between; align-items: center; }
+  .verlauf h3 { font-size: .85rem; color: var(--muted); margin: 8px 0 6px; font-weight: 600; }
+  .verlauf .spalten { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .verlauf ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: .85rem; max-height: 220px; overflow: auto; }
+  .verlauf li { display: flex; gap: 8px; }
+  .verlauf code { font-weight: 700; color: var(--accent); flex: none; }
+  .verlauf span { color: var(--muted); }
+  @media (max-width: 520px) { .verlauf .spalten { grid-template-columns: 1fr; } }
+  .datei { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+  .datei .btn { padding: 8px 12px; font-size: .9rem; }
+  .status { width: 100%; text-align: right; font-size: .78rem; color: var(--muted); }
+  .status.ungespeichert { color: var(--mittel); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); }
+  .stat b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+  .stat small { color: var(--muted); }
+  .bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; margin-top: 8px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--niedrig); transition: width .3s; }
+
+  form.neu { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 12px; box-shadow: var(--shadow); margin-bottom: 16px; }
+  .zeile { display: flex; gap: 8px; }
+  .zeile + .zeile { margin-top: 8px; flex-wrap: wrap; }
+  input, select, button { font: inherit; color: inherit; }
+  input[type=text], input[type=date], select {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0;
+  }
+  input[type=text] { flex: 1; }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .btn { border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .btn.leise { background: transparent; color: var(--muted); border: 1px solid var(--line); font-weight: 500; }
+
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .tabs { display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+  .tabs button { border: 0; background: none; padding: 7px 12px; border-radius: 9px; cursor: pointer; color: var(--muted); }
+  .tabs button.aktiv { background: var(--ink); color: var(--bg); }
+  .toolbar input[type=text] { flex: 1; min-width: 140px; padding: 8px 12px; }
+
+  ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+  li.task {
+    display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line);
+    border-left: 4px solid var(--prio, var(--line)); border-radius: 12px; padding: 12px 12px 12px 14px; box-shadow: var(--shadow);
+    animation: rein .2s ease;
+  }
+  @keyframes rein { from { opacity: 0; transform: translateY(-4px); } }
+  li.task.dragging { opacity: .4; }
+  .check {
+    appearance: none; width: 24px; height: 24px; flex: none; border: 2px solid var(--muted); border-radius: 50%;
+    cursor: pointer; display: grid; place-items: center; margin: 0;
+  }
+  .check:checked { background: var(--niedrig); border-color: var(--niedrig); }
+  .check:checked::after { content: "✓"; color: #fff; font-size: 14px; font-weight: 700; }
+  .inhalt { flex: 1; min-width: 0; }
+  .titel { word-break: break-word; cursor: text; }
+  li.erledigt .titel { text-decoration: line-through; color: var(--muted); }
+  .meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: .8rem; color: var(--muted); margin-top: 2px; }
+  .tag { background: var(--bg); border-radius: 6px; padding: 1px 7px; }
+  .faellig.ueber { color: var(--hoch); font-weight: 600; }
+  .aktionen { display: flex; gap: 2px; }
+  .icon { border: 0; background: none; cursor: pointer; padding: 6px 8px; border-radius: 8px; color: var(--muted); font-size: 1rem; }
+  .icon:hover { background: var(--bg); color: var(--ink); }
+  .edit { width: 100%; padding: 6px 8px; }
+  .leer { text-align: center; color: var(--muted); padding: 40px 0; }
+  .leer b { display: block; font-size: 2rem; margin-bottom: 6px; }
+  footer { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; color: var(--muted); font-size: .9rem; gap: 8px; flex-wrap: wrap; }
+  .toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%) translateY(80px); background: var(--ink); color: var(--bg);
+    padding: 10px 14px; border-radius: 12px; display: flex; gap: 12px; align-items: center; transition: transform .25s; z-index: 10;
+  }
+  .toast.zeigen { transform: translateX(-50%) translateY(0); }
+  .toast button { background: none; border: 0; color: var(--accent); font-weight: 700; cursor: pointer; }
+  @media (max-width: 480px) { h1 { font-size: 1.8rem; } .stat b { font-size: 1.25rem; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Erledigt<span>!</span> <button class="version" id="appVersion" title="Versionsverlauf anzeigen"></button></h1>
+      <div class="datum" id="datum"></div>
+    </div>
+    <div class="datei">
+      <button class="btn leise" id="laden" title="Aufgaben aus einer Datei laden">📂 Laden</button>
+      <button class="btn" id="speichern" title="Aufgaben als Datei speichern">💾 Speichern</button>
+      <input type="file" id="dateiInput" accept=".json,application/json" hidden>
+      <div class="status" id="status"></div>
+    </div>
+  </header>
+
+  <section class="stats">
+    <div class="stat"><b id="sOffen">0</b><small>Offen</small></div>
+    <div class="stat"><b id="sErledigt">0</b><small>Erledigt</small></div>
+    <div class="stat"><b id="sProzent">0 %</b><small>Fortschritt</small><div class="bar"><i id="bar"></i></div></div>
+  </section>
+
+  <form class="neu" id="formNeu" autocomplete="off">
+    <div class="zeile">
+      <input type="text" id="eingabe" placeholder="Was muss erledigt werden?" maxlength="200" required>
+      <button class="btn" type="submit">Hinzufügen</button>
+    </div>
+    <div class="zeile">
+      <select id="prio" aria-label="Priorität">
+        <option value="niedrig">🟢 Niedrig</option>
+        <option value="mittel" selected>🟡 Mittel</option>
+        <option value="hoch">🔴 Hoch</option>
+      </select>
+      <input type="date" id="faellig" aria-label="Fällig am">
+      <input type="text" id="kategorie" placeholder="Kategorie (optional)" maxlength="30" list="kategorien" style="flex:1">
+      <datalist id="kategorien"></datalist>
+    </div>
+  </form>
+
+  <div class="toolbar">
+    <div class="tabs" role="tablist">
+      <button data-filter="alle" class="aktiv">Alle</button>
+      <button data-filter="offen">Offen</button>
+      <button data-filter="erledigt">Erledigt</button>
+    </div>
+    <input type="text" id="suche" placeholder="🔍 Suchen …">
+    <select id="sortierung" aria-label="Sortieren">
+      <option value="manuell">Eigene Reihenfolge</option>
+      <option value="prio">Nach Priorität</option>
+      <option value="datum">Nach Fälligkeit</option>
+    </select>
+  </div>
+
+  <section class="verlauf" id="verlauf" hidden>
+    <div class="verlauf-kopf"><b>Versionen</b><button class="icon" id="verlaufZu" aria-label="Schließen">✕</button></div>
+    <div class="spalten">
+      <div><h3>Deine Speicherstände</h3><ol id="speicherVerlauf"></ol></div>
+      <div><h3>App-Updates</h3><ol id="appVerlauf"></ol></div>
+    </div>
+  </section>
+
+  <ul id="liste"></ul>
+
+  <footer>
+    <span id="info"></span>
+    <button class="btn leise" id="aufraeumen">Erledigte löschen</button>
+  </footer>
+</div>
+
+<div class="toast" id="toast"><span id="toastText"></span><button id="rueckgaengig">Rückgängig</button></div>
+
+<script>
+(() => {
+  const KEY = 'erledigt-app-v1';
+  const $ = s => document.querySelector(s);
+  const PRIO = { hoch: 0, mittel: 1, niedrig: 2 };
+  const PRIO_FARBE = { hoch: 'var(--hoch)', mittel: 'var(--mittel)', niedrig: 'var(--niedrig)' };
+
+  let tasks = laden();
+  let filter = 'alle', suche = '', sortierung = 'manuell';
+  let rueckgaengigStand = null, toastTimer;
+
+  function laden() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+  }
+  // ---- Versionen ----
+  const APP_VERSION = 'V1.10';
+  const APP_VERLAUF = [
+    ['V1.10', 'Speichern & Laden als Datei, Versionsverfolgung'],
+    ['V1.00', 'Erste Version: Aufgaben, Filter, Suche, Sortierung'],
+  ];
+  // Datenversion: steigt bei jedem Speichern um 0.01 (V1.00 → V1.01 … V1.99 → V2.00)
+  const VKEY = KEY + '-versionen';
+  let versionen = (() => { try { return JSON.parse(localStorage.getItem(VKEY)) || []; } catch { return []; } })();
+  const vText = n => 'V' + (n / 100).toFixed(2);
+  const aktuelleNr = () => versionen.length ? versionen[0].nr : 99; // erste Speicherung = V1.00
+  function versionenMerken() { try { localStorage.setItem(VKEY, JSON.stringify(versionen.slice(0, 50))); } catch {} }
+
+  function zeigeVerlauf() {
+    $('#appVersion').textContent = APP_VERSION;
+    const sv = $('#speicherVerlauf'); sv.innerHTML = '';
+    if (!versionen.length) sv.innerHTML = '<li><span>Noch nicht gespeichert</span></li>';
+    for (const v of versionen) {
+      const li = document.createElement('li');
+      const d = new Date(v.zeit).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      li.innerHTML = `<code>${vText(v.nr)}</code><span></span>`;
+      li.lastChild.textContent = `${d} · ${v.anzahl} Aufgaben, ${v.erledigt} erledigt`;
+      sv.append(li);
+    }
+    const av = $('#appVerlauf'); av.innerHTML = '';
+    for (const [v, t] of APP_VERLAUF) {
+      const li = document.createElement('li');
+      li.innerHTML = `<code>${v}</code><span>${t}</span>`;
+      av.append(li);
+    }
+  }
+  $('#appVersion').onclick = () => { $('#verlauf').hidden = !$('#verlauf').hidden; };
+  $('#verlaufZu').onclick = () => { $('#verlauf').hidden = true; };
+
+  // Zwischenspeicher im Browser + Merker für "ungespeicherte Änderungen"
+  let dateiHandle = null, ungespeichert = false;
+  function speichern(markieren = true) {
+    try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch {}
+    if (markieren) { ungespeichert = true; zeigeStatus(); }
+  }
+  function zeigeStatus(text) {
+    const s = $('#status');
+    s.className = 'status' + (ungespeichert ? ' ungespeichert' : '');
+    const v = versionen.length ? vText(aktuelleNr()) : '';
+    s.textContent = text || (ungespeichert ? `● Änderungen seit ${v || 'Start'} nicht gespeichert` : (v ? `✓ Stand ${v}` : ''));
+  }
+
+  // ---- Als Datei speichern ----
+  const dateiname = nr => `aufgaben-${vText(nr)}.json`;
+  const inhaltJSON = nr => JSON.stringify({
+    app: 'erledigt', appVersion: APP_VERSION, version: vText(nr), gespeichert: new Date().toISOString(),
+    verlauf: versionen.slice(0, 50), tasks
+  }, null, 2);
+
+  function neueVersion() {
+    const nr = aktuelleNr() + 1;
+    versionen.unshift({ nr, zeit: Date.now(), anzahl: tasks.length, erledigt: tasks.filter(t => t.done).length });
+    versionenMerken(); zeigeVerlauf();
+    return nr;
+  }
+  function versionZurueck() { versionen.shift(); versionenMerken(); zeigeVerlauf(); }
+
+  async function inDateiSpeichern() {
+    const nr = neueVersion();
+    const daten = inhaltJSON(nr);
+    // Moderne Browser (Chrome, Edge): echte Datei wählen und danach immer wieder dorthin speichern
+    if (window.showSaveFilePicker) {
+      try {
+        if (!dateiHandle) {
+          dateiHandle = await showSaveFilePicker({
+            suggestedName: dateiname(nr),
+            types: [{ description: 'Aufgaben-Datei', accept: { 'application/json': ['.json'] } }]
+          });
+        }
+        const w = await dateiHandle.createWritable();
+        await w.write(daten); await w.close();
+        ungespeichert = false; zeigeStatus(`✓ ${vText(nr)} gespeichert in ${dateiHandle.name}`);
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') { versionZurueck(); return; } // Nutzer hat abgebrochen
+        dateiHandle = null; // sonst auf Download ausweichen
+      }
+    }
+    // Alle anderen Browser (Safari, Firefox, Handy): als Download
+    const url = URL.createObjectURL(new Blob([daten], { type: 'application/json' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: dateiname(nr) });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    ungespeichert = false; zeigeStatus(`✓ ${vText(nr)} heruntergeladen`);
+  }
+
+  // ---- Aus Datei laden ----
+  function datenUebernehmen(text, name) {
+    try {
+      const d = JSON.parse(text);
+      const liste = Array.isArray(d) ? d : d.tasks;
+      if (!Array.isArray(liste)) throw 0;
+      const sauber = liste.filter(t => t && typeof t.text === 'string').map(t => ({
+        id: t.id || id(), text: t.text.slice(0, 200), done: !!t.done,
+        prio: PRIO[t.prio] !== undefined ? t.prio : 'mittel',
+        faellig: /^\d{4}-\d{2}-\d{2}$/.test(t.faellig || '') ? t.faellig : null,
+        kat: t.kat ? String(t.kat).slice(0, 30) : null, erstellt: t.erstellt || Date.now(), doneAt: t.doneAt || null
+      }));
+      rueckgaengigStand = JSON.stringify(tasks);
+      tasks = sauber;
+      // Versionsverlauf aus der Datei übernehmen, damit es dort weiterzählt
+      const m = /^V(\d+)\.(\d{2})$/.exec(d.version || '');
+      if (Array.isArray(d.verlauf) && d.verlauf.length) versionen = d.verlauf.filter(v => Number.isFinite(v.nr));
+      else if (m) versionen = [{ nr: +m[1] * 100 + +m[2], zeit: Date.parse(d.gespeichert) || Date.now(), anzahl: sauber.length, erledigt: sauber.filter(t => t.done).length }];
+      versionenMerken(); zeigeVerlauf();
+      speichern(false); ungespeichert = false; render();
+      const v = versionen.length ? vText(aktuelleNr()) : '';
+      zeigeStatus(`✓ Geladen: ${v ? v + ' · ' : ''}${name}`);
+      toast(`${v ? v + ': ' : ''}${sauber.length} Aufgaben geladen`);
+    } catch {
+      toast('Datei konnte nicht gelesen werden', false);
+    }
+  }
+
+  $('#speichern').onclick = inDateiSpeichern;
+  $('#laden').onclick = async () => {
+    if (window.showOpenFilePicker) {
+      try {
+        const [h] = await showOpenFilePicker({ types: [{ description: 'Aufgaben-Datei', accept: { 'application/json': ['.json'] } }] });
+        const f = await h.getFile();
+        dateiHandle = h; // weitere Speicherungen gehen in dieselbe Datei
+        datenUebernehmen(await f.text(), f.name);
+        return;
+      } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    $('#dateiInput').click();
+  };
+  $('#dateiInput').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    datenUebernehmen(await f.text(), f.name);
+    e.target.value = '';
+  };
+
+  // Strg/Cmd + S speichert
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); inDateiSpeichern(); }
+  });
+  // Warnung beim Schließen mit ungespeicherten Änderungen
+  window.addEventListener('beforeunload', e => { if (ungespeichert && tasks.length) { e.preventDefault(); e.returnValue = ''; } });
+  const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const heute = () => new Date().toISOString().slice(0, 10);
+
+  $('#datum').textContent = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  function datumText(d) {
+    if (!d) return '';
+    const diff = Math.round((new Date(d) - new Date(heute())) / 864e5);
+    if (diff === 0) return 'Heute';
+    if (diff === 1) return 'Morgen';
+    if (diff === -1) return 'Gestern';
+    return new Date(d).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  }
+
+  function sichtbar() {
+    let l = tasks.filter(t =>
+      (filter === 'alle' || (filter === 'offen' ? !t.done : t.done)) &&
+      (!suche || (t.text + ' ' + (t.kat || '')).toLowerCase().includes(suche))
+    );
+    if (sortierung === 'prio') l = [...l].sort((a, b) => PRIO[a.prio] - PRIO[b.prio]);
+    if (sortierung === 'datum') l = [...l].sort((a, b) => (a.faellig || '9999').localeCompare(b.faellig || '9999'));
+    return l;
+  }
+
+  function render() {
+    const liste = $('#liste');
+    liste.innerHTML = '';
+    const l = sichtbar();
+
+    if (!l.length) {
+      const leer = document.createElement('li');
+      leer.className = 'leer';
+      leer.innerHTML = tasks.length
+        ? '<b>🔍</b>Nichts gefunden.'
+        : '<b>✨</b>Noch keine Aufgaben. Leg oben los!';
+      if (tasks.length && filter === 'offen' && !suche) leer.innerHTML = '<b>🎉</b>Alles erledigt!';
+      liste.append(leer);
+    }
+
+    for (const t of l) {
+      const li = document.createElement('li');
+      li.className = 'task' + (t.done ? ' erledigt' : '');
+      li.style.setProperty('--prio', PRIO_FARBE[t.prio]);
+      li.dataset.id = t.id;
+      li.draggable = sortierung === 'manuell';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.className = 'check'; cb.checked = t.done;
+      cb.setAttribute('aria-label', 'Erledigt');
+      cb.onchange = () => { t.done = cb.checked; t.doneAt = t.done ? Date.now() : null; speichern(); render(); };
+
+      const inhalt = document.createElement('div');
+      inhalt.className = 'inhalt';
+      const titel = document.createElement('div');
+      titel.className = 'titel'; titel.textContent = t.text;
+      titel.title = 'Doppelklick zum Bearbeiten';
+      titel.ondblclick = () => bearbeiten(t, inhalt, titel);
+
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      if (t.kat) meta.innerHTML += `<span class="tag"></span>`;
+      if (t.kat) meta.lastChild.textContent = '#' + t.kat;
+      if (t.faellig) {
+        const f = document.createElement('span');
+        f.className = 'faellig' + (!t.done && t.faellig < heute() ? ' ueber' : '');
+        f.textContent = '📅 ' + datumText(t.faellig);
+        meta.append(f);
+      }
+      inhalt.append(titel);
+      if (meta.childNodes.length) inhalt.append(meta);
+
+      const akt = document.createElement('div');
+      akt.className = 'aktionen';
+      const eb = knopf('✏️', 'Bearbeiten', () => bearbeiten(t, inhalt, titel));
+      const db = knopf('🗑️', 'Löschen', () => loeschen([t.id], 'Aufgabe gelöscht'));
+      akt.append(eb, db);
+
+      li.append(cb, inhalt, akt);
+      liste.append(li);
+    }
+
+    const offen = tasks.filter(t => !t.done).length, fertig = tasks.length - offen;
+    const p = tasks.length ? Math.round(fertig / tasks.length * 100) : 0;
+    $('#sOffen').textContent = offen;
+    $('#sErledigt').textContent = fertig;
+    $('#sProzent').textContent = p + ' %';
+    $('#bar').style.width = p + '%';
+    $('#info').textContent = `${tasks.length} Aufgabe${tasks.length === 1 ? '' : 'n'} insgesamt`;
+    $('#aufraeumen').style.visibility = fertig ? 'visible' : 'hidden';
+
+    $('#kategorien').innerHTML = '';
+    [...new Set(tasks.map(t => t.kat).filter(Boolean))].forEach(k => {
+      const o = document.createElement('option'); o.value = k; $('#kategorien').append(o);
+    });
+  }
+
+  function knopf(sym, label, fn) {
+    const b = document.createElement('button');
+    b.className = 'icon'; b.textContent = sym; b.title = label; b.setAttribute('aria-label', label);
+    b.onclick = fn; return b;
+  }
+
+  function bearbeiten(t, inhalt, titel) {
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.className = 'edit'; inp.value = t.text; inp.maxLength = 200;
+    titel.replaceWith(inp); inp.focus(); inp.select();
+    let fertig = false;
+    const ende = ok => {
+      if (fertig) return; fertig = true;
+      const v = inp.value.trim();
+      if (ok && v) { t.text = v; speichern(); }
+      render();
+    };
+    inp.onkeydown = e => { if (e.key === 'Enter') ende(true); if (e.key === 'Escape') ende(false); };
+    inp.onblur = () => ende(true);
+  }
+
+  function loeschen(ids, text) {
+    rueckgaengigStand = JSON.stringify(tasks);
+    tasks = tasks.filter(t => !ids.includes(t.id));
+    speichern(); render();
+    toast(text);
+  }
+
+  function toast(text, mitRueckgaengig = true) {
+    $('#toastText').textContent = text;
+    $('#rueckgaengig').style.display = mitRueckgaengig ? '' : 'none';
+    $('#toast').classList.add('zeigen');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $('#toast').classList.remove('zeigen'), 5000);
+  }
+
+  $('#rueckgaengig').onclick = () => {
+    if (rueckgaengigStand) { tasks = JSON.parse(rueckgaengigStand); rueckgaengigStand = null; speichern(); render(); }
+    $('#toast').classList.remove('zeigen');
+  };
+
+  $('#formNeu').onsubmit = e => {
+    e.preventDefault();
+    const text = $('#eingabe').value.trim();
+    if (!text) return;
+    tasks.unshift({
+      id: id(), text, done: false, prio: $('#prio').value,
+      faellig: $('#faellig').value || null, kat: $('#kategorie').value.trim() || null, erstellt: Date.now()
+    });
+    $('#eingabe').value = ''; $('#faellig').value = '';
+    if (filter === 'erledigt') setzeFilter('alle');
+    speichern(); render(); $('#eingabe').focus();
+  };
+
+  function setzeFilter(f) {
+    filter = f;
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('aktiv', b.dataset.filter === f));
+    render();
+  }
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => setzeFilter(b.dataset.filter));
+  $('#suche').oninput = e => { suche = e.target.value.trim().toLowerCase(); render(); };
+  $('#sortierung').onchange = e => { sortierung = e.target.value; render(); };
+  $('#aufraeumen').onclick = () => {
+    const ids = tasks.filter(t => t.done).map(t => t.id);
+    loeschen(ids, `${ids.length} erledigte gelöscht`);
+  };
+
+  // Drag & Drop zum Umsortieren
+  let ziehId = null;
+  const liste = $('#liste');
+  liste.addEventListener('dragstart', e => {
+    const li = e.target.closest('li.task'); if (!li) return;
+    ziehId = li.dataset.id; li.classList.add('dragging');
+  });
+  liste.addEventListener('dragend', e => { e.target.closest('li.task')?.classList.remove('dragging'); ziehId = null; });
+  liste.addEventListener('dragover', e => e.preventDefault());
+  liste.addEventListener('drop', e => {
+    e.preventDefault();
+    const ziel = e.target.closest('li.task');
+    if (!ziel || !ziehId || ziel.dataset.id === ziehId) return;
+    const von = tasks.findIndex(t => t.id === ziehId);
+    const [t] = tasks.splice(von, 1);
+    const nach = tasks.findIndex(x => x.id === ziel.dataset.id);
+    const unten = e.clientY > ziel.getBoundingClientRect().top + ziel.offsetHeight / 2;
+    tasks.splice(nach + (unten ? 1 : 0), 0, t);
+    speichern(); render();
+  });
+
+  zeigeVerlauf(); zeigeStatus();
+  render();
+})();
+</script>
+</body>
+</html>
