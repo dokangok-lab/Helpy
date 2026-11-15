@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Erledigt!">
+<meta name="theme-color" content="#e2542f">
 <title>Erledigt! – To-do App</title>
 <style>
   :root {
@@ -116,6 +121,7 @@
       <div class="datum" id="datum"></div>
     </div>
     <div class="datei">
+      <button class="btn leise" id="glocke" title="Mitteilungen ein/aus">🔕</button>
       <button class="btn leise" id="laden" title="Aufgaben aus einer Datei laden">📂 Laden</button>
       <button class="btn" id="speichern" title="Aufgaben als Datei speichern">💾 Speichern</button>
       <input type="file" id="dateiInput" accept=".json,application/json" hidden>
@@ -141,6 +147,14 @@
         <option value="hoch">🔴 Hoch</option>
       </select>
       <input type="date" id="faellig" aria-label="Fällig am">
+      <input type="time" id="zeit" aria-label="Uhrzeit">
+      <select id="erinnerung" aria-label="Erinnerung">
+        <option value="">🔔 Keine Erinnerung</option>
+        <option value="0">🔔 Zur Uhrzeit</option>
+        <option value="15">🔔 15 Min vorher</option>
+        <option value="60">🔔 1 Std vorher</option>
+        <option value="1440">🔔 1 Tag vorher</option>
+      </select>
       <input type="text" id="kategorie" placeholder="Kategorie (optional)" maxlength="30" list="kategorien" style="flex:1">
       <datalist id="kategorien"></datalist>
     </div>
@@ -193,8 +207,9 @@
     try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
   }
   // ---- Versionen ----
-  const APP_VERSION = 'V1.10';
+  const APP_VERSION = 'V1.20';
   const APP_VERLAUF = [
+    ['V1.20', 'Uhrzeit, Erinnerungen als Mitteilung, Kalendereintrag (.ics), als App installierbar'],
     ['V1.10', 'Speichern & Laden als Datei, Versionsverfolgung'],
     ['V1.00', 'Erste Version: Aufgaben, Filter, Suche, Sortierung'],
   ];
@@ -293,7 +308,9 @@
         id: t.id || id(), text: t.text.slice(0, 200), done: !!t.done,
         prio: PRIO[t.prio] !== undefined ? t.prio : 'mittel',
         faellig: /^\d{4}-\d{2}-\d{2}$/.test(t.faellig || '') ? t.faellig : null,
-        kat: t.kat ? String(t.kat).slice(0, 30) : null, erstellt: t.erstellt || Date.now(), doneAt: t.doneAt || null
+        kat: t.kat ? String(t.kat).slice(0, 30) : null, erstellt: t.erstellt || Date.now(), doneAt: t.doneAt || null,
+        zeit: /^\d{2}:\d{2}$/.test(t.zeit || '') ? t.zeit : null,
+        erinnerung: Number.isFinite(t.erinnerung) ? t.erinnerung : null, benachrichtigt: !!t.benachrichtigt
       }));
       rueckgaengigStand = JSON.stringify(tasks);
       tasks = sauber;
@@ -401,7 +418,7 @@
       if (t.faellig) {
         const f = document.createElement('span');
         f.className = 'faellig' + (!t.done && t.faellig < heute() ? ' ueber' : '');
-        f.textContent = '📅 ' + datumText(t.faellig);
+        f.textContent = '📅 ' + datumText(t.faellig) + (t.zeit ? ', ' + t.zeit : '') + (t.erinnerung !== null && t.erinnerung !== undefined ? ' 🔔' : '');
         meta.append(f);
       }
       inhalt.append(titel);
@@ -411,6 +428,7 @@
       akt.className = 'aktionen';
       const eb = knopf('✏️', 'Bearbeiten', () => bearbeiten(t, inhalt, titel));
       const db = knopf('🗑️', 'Löschen', () => loeschen([t.id], 'Aufgabe gelöscht'));
+      if (t.faellig) akt.append(knopf('📆', 'In Kalender eintragen', () => kalender(t)));
       akt.append(eb, db);
 
       li.append(cb, inhalt, akt);
@@ -479,9 +497,14 @@
     if (!text) return;
     tasks.unshift({
       id: id(), text, done: false, prio: $('#prio').value,
-      faellig: $('#faellig').value || null, kat: $('#kategorie').value.trim() || null, erstellt: Date.now()
+      faellig: $('#faellig').value || null, kat: $('#kategorie').value.trim() || null, erstellt: Date.now(),
+      zeit: $('#zeit').value || null,
+      erinnerung: $('#faellig').value && $('#erinnerung').value !== '' ? +$('#erinnerung').value : null,
+      benachrichtigt: false
     });
-    $('#eingabe').value = ''; $('#faellig').value = '';
+    if ($('#erinnerung').value !== '' && !$('#faellig').value) toast('Für eine Erinnerung brauchst du ein Datum', false);
+    if ($('#erinnerung').value !== '' && $('#faellig').value && !mitteilungenAn()) toast('Tipp: 🔕 oben antippen, um Mitteilungen zu erlauben', false);
+    $('#eingabe').value = ''; $('#faellig').value = ''; $('#zeit').value = ''; $('#erinnerung').value = '';
     if (filter === 'erledigt') setzeFilter('alle');
     speichern(); render(); $('#eingabe').focus();
   };
@@ -519,6 +542,85 @@
     tasks.splice(nach + (unten ? 1 : 0), 0, t);
     speichern(); render();
   });
+
+  // ---- Kalendereintrag (.ics) – funktioniert mit Apple-, Google- und Outlook-Kalender ----
+  function ics(s) { return String(s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/[,;]/g, m => '\\' + m); }
+  function kalender(t) {
+    const d = t.faellig.replace(/-/g, '');
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    let zeitZeilen;
+    if (t.zeit) {
+      const [h, m] = t.zeit.split(':').map(Number);
+      const ende = new Date(2000, 0, 1, h, m + 30);
+      const hm = (a, b) => String(a).padStart(2, '0') + String(b).padStart(2, '0') + '00';
+      const endTag = ende.getDate() === 2 ? new Date(new Date(t.faellig + 'T12:00').getTime() + 864e5).toISOString().slice(0, 10).replace(/-/g, '') : d;
+      zeitZeilen = [`DTSTART:${d}T${hm(h, m)}`, `DTEND:${endTag}T${hm(ende.getHours(), ende.getMinutes())}`];
+    } else {
+      const morgen = new Date(new Date(t.faellig + 'T12:00').getTime() + 864e5).toISOString().slice(0, 10).replace(/-/g, '');
+      zeitZeilen = [`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${morgen}`];
+    }
+    const vorher = t.erinnerung !== null && t.erinnerung !== undefined ? t.erinnerung : (t.zeit ? 15 : null);
+    const alarm = vorher === null ? [] : ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${ics(t.text)}`, `TRIGGER:-PT${vorher}M`, 'END:VALARM'];
+    const inhalt = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Erledigt//DE', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
+      `UID:${t.id}@erledigt`, `DTSTAMP:${stamp}`, ...zeitZeilen,
+      `SUMMARY:${ics(t.text)}`, `DESCRIPTION:${ics('Aufgabe aus Erledigt!' + (t.kat ? ' #' + t.kat : ''))}`,
+      ...alarm, 'END:VEVENT', 'END:VCALENDAR'
+    ].join('\r\n');
+    const url = URL.createObjectURL(new Blob([inhalt], { type: 'text/calendar;charset=utf-8' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: t.text.replace(/[^\wäöüÄÖÜß -]/g, '').slice(0, 40).trim() + '.ics' });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast('Kalendereintrag erstellt – Datei öffnen, um ihn hinzuzufügen', false);
+  }
+
+  // ---- Mitteilungen ----
+  let swReg = null;
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').then(r => swReg = r).catch(() => {});
+  }
+  const MKEY = KEY + '-mitteilungen';
+  const mitteilungenAn = () => 'Notification' in window && Notification.permission === 'granted' && (() => { try { return localStorage.getItem(MKEY) !== 'aus'; } catch { return true; } })();
+  function glockeZeigen() { $('#glocke').textContent = mitteilungenAn() ? '🔔' : '🔕'; }
+
+  $('#glocke').onclick = async () => {
+    if (!('Notification' in window)) {
+      const ios = /iPhone|iPad/.test(navigator.userAgent);
+      toast(ios ? 'Auf dem iPhone: erst Teilen → „Zum Home-Bildschirm“, dann die App von dort öffnen' : 'Dieser Browser kann keine Mitteilungen', false);
+      return;
+    }
+    if (mitteilungenAn()) { try { localStorage.setItem(MKEY, 'aus'); } catch {} glockeZeigen(); toast('Mitteilungen aus', false); return; }
+    try { localStorage.removeItem(MKEY); } catch {}
+    const p = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    glockeZeigen();
+    if (p === 'granted') { melden('Mitteilungen sind an ✓', 'Du wirst an fällige Aufgaben erinnert, solange die App offen ist.'); pruefen(); }
+    else toast('Mitteilungen wurden nicht erlaubt (in den Einstellungen änderbar)', false);
+  };
+
+  function melden(titel, text) {
+    const opt = { body: text, icon: 'icon-192.png', badge: 'icon-192.png', tag: titel };
+    if (swReg && swReg.showNotification) swReg.showNotification(titel, opt).catch(() => { try { new Notification(titel, opt); } catch {} });
+    else { try { new Notification(titel, opt); } catch { toast(titel + ': ' + text, false); } }
+  }
+
+  function zeitpunkt(t) { return new Date(`${t.faellig}T${t.zeit || '09:00'}`).getTime() - (t.erinnerung || 0) * 6e4; }
+  function pruefen() {
+    const jetzt = Date.now(); let geaendert = false;
+    for (const t of tasks) {
+      if (t.done || !t.faellig || t.erinnerung === null || t.erinnerung === undefined || t.benachrichtigt) continue;
+      if (zeitpunkt(t) <= jetzt) {
+        const wann = t.erinnerung ? `in ${t.erinnerung >= 1440 ? '1 Tag' : t.erinnerung >= 60 ? '1 Stunde' : t.erinnerung + ' Minuten'}` : 'jetzt';
+        if (mitteilungenAn()) melden('⏰ ' + t.text, `Fällig ${wann}${t.zeit ? ' (' + t.zeit + ' Uhr)' : ''}`);
+        else toast('⏰ ' + t.text, false);
+        t.benachrichtigt = true; geaendert = true;
+      }
+    }
+    if (geaendert) { speichern(); render(); }
+  }
+  setInterval(pruefen, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pruefen(); });
+  glockeZeigen();
+  setTimeout(pruefen, 1500);
 
   zeigeVerlauf(); zeigeStatus();
   render();
