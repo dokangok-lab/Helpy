@@ -1,5 +1,5 @@
 // Service Worker für „Erledigt!“: Mitteilungen + offline nutzbar
-const CACHE = 'erledigt-v1.20';
+const CACHE = 'erledigt-v0.04';
 const DATEIEN = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
